@@ -1,0 +1,37 @@
+name: three-stage
+label: three-stage
+kind: standalone
+version: 0.1.0
+manifest_version: 2
+api_version: 1
+license: MIT
+author: tuancookiez
+description: >
+  Live three.js r187 scenes and GLB, GLTF, STL and OBJ models in Hermes chat. One tool,
+  `three_scene`, checks a scene module against the r187 contract, or a model file, and returns it
+  as a file; Hermes Desktop draws it as an interactive card (orbit
+  controls, restart, fullscreen, screenshot, "ask Hermes to change this") and sends scene errors
+  back to the chat on request. Bundles the `three-r187` skill and three.js r187 (MIT).
+  Disclosures: scene code written by the model runs in Desktop inside a sandboxed iframe (opaque
+  origin, scripts only, no app or storage access) whose content security policy blocks all
+  network requests;
+  the exported HTML file loads three.js from cdn.jsdelivr.net when opened outside Desktop. Scenes
+  are stored under plugin-data/three-stage and cache/generated/three-stage. When given a model path,
+  the tool reads that file and the .bin, .mtl and image files it references in the same folder, and
+  copies them to plugin-data (50 MB limit). No API keys, no
+  background processes, no telemetry, no paid services. Each "Fix with Hermes" or "Ask Hermes"
+  click sends one normal chat message, which uses model tokens like any message.
+  When a Desktop window is open, each three_scene call also runs the scene for a moment in a
+  hidden sandboxed frame so crashes reach Hermes in the same turn. The tool waits up to 2.5 s for
+  Desktop (16 s once it starts); this can be turned off with the verify_scenes setting.
+requires_hermes: ">=0.22.7"
+tags: [three.js, 3d, webgpu, visualization, desktop]
+provides_tools:
+  - three_scene
+provides_hooks: []
+config_schema:
+  verify_scenes:
+    type: bool
+    default: true
+    label: Dry-run scenes before showing them
+    description: "Runs each scene briefly in a hidden frame in Hermes Desktop so Hermes can fix crashes in the same turn. Each repair uses model tokens."

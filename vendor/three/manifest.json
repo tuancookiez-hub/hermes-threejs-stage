@@ -1,0 +1,49 @@
+{
+  "three": "0.187.0",
+  "revision": "187",
+  "build": [
+    "three.core.js",
+    "three.tsl.js",
+    "three.webgpu.js"
+  ],
+  "addons": [
+    "controls/OrbitControls.js",
+    "environments/RoomEnvironment.js",
+    "geometries/ConvexGeometry.js",
+    "geometries/ParametricFunctions.js",
+    "geometries/ParametricGeometry.js",
+    "geometries/RoundedBoxGeometry.js",
+    "geometries/TeapotGeometry.js",
+    "loaders/GLTFLoader.js",
+    "loaders/MTLLoader.js",
+    "loaders/OBJLoader.js",
+    "loaders/STLLoader.js",
+    "math/ConvexHull.js",
+    "math/ImprovedNoise.js",
+    "math/SimplexNoise.js",
+    "objects/SkyMesh.js",
+    "tsl/display/BloomNode.js",
+    "utils/BufferGeometryUtils.js",
+    "utils/SkeletonUtils.js"
+  ],
+  "public": [
+    "controls/OrbitControls.js",
+    "loaders/GLTFLoader.js",
+    "loaders/STLLoader.js",
+    "loaders/OBJLoader.js",
+    "loaders/MTLLoader.js",
+    "utils/BufferGeometryUtils.js",
+    "utils/SkeletonUtils.js",
+    "environments/RoomEnvironment.js",
+    "geometries/RoundedBoxGeometry.js",
+    "geometries/ParametricGeometry.js",
+    "geometries/ParametricFunctions.js",
+    "geometries/ConvexGeometry.js",
+    "geometries/TeapotGeometry.js",
+    "math/ImprovedNoise.js",
+    "math/SimplexNoise.js",
+    "math/ConvexHull.js",
+    "objects/SkyMesh.js",
+    "tsl/display/BloomNode.js"
+  ]
+}

@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><!--CSP--><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>three-stage</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#15161a;color:#ccc;font:12px/1.4 system-ui,sans-serif}
+body.standalone{background:#15161a}
+canvas{display:block;width:100%;height:100%;touch-action:none;outline:none}
+#boot{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;opacity:.6;pointer-events:none}
+#hint{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);padding:3px 9px;border-radius:999px;background:rgba(0,0,0,.6);color:#eee;font-size:11px;opacity:0;transition:opacity .25s;pointer-events:none}
+#hint.on{opacity:1}
+</style></head>
+<body><canvas id="stage" tabindex="0"></canvas><div id="boot">loading scene…</div><div id="hint">Click the scene, then scroll to zoom</div>
+<script>
+// three-stage harness. Runs scene code written for three.js r187 inside a sandboxed frame.
+// Desktop mode: the host card posts {t:'boot'} with three.js sources + scene code (no network).
+// Standalone mode (exported HTML): window.__THREE_STAGE__ carries the scene and a CDN base.
+(() => {
+  'use strict'
+  const STANDALONE = window.__THREE_STAGE__ || null
+  const canvas = document.getElementById('stage')
+  const bootEl = document.getElementById('boot')
+  const toHost = (msg) => { if (!STANDALONE) parent.postMessage(Object.assign({ __threeStage: 1 }, msg), '*') }
+  const blobUrl = (code) => URL.createObjectURL(new Blob([code], { type: 'text/javascript' }))
+
+  let userUrl = ''
+  let userLines = []
+  let failed = false
+  let reported = 0
+
+  function codeFrame(line) {
+    if (!line || !userLines.length) return ''
+    const out = []
+    for (let i = Math.max(1, line - 1); i <= Math.min(userLines.length, line + 1); i++) out.push((i === line ? '> ' : '  ') + i + ' | ' + userLines[i - 1])
+    return out.join('\n')
+  }
+  function userPos(stack) {
+    if (!stack || !userUrl) return null
+    const i = stack.indexOf(userUrl + ':')
+    if (i < 0) return null
+    const m = /^:(\d+):(\d+)/.exec(stack.slice(i + userUrl.length))
+    return m ? { line: +m[1], col: +m[2] } : null
+  }
+  function clean(text) { return String(text || '').split(userUrl).join('scene.js').slice(0, 1500) }
+
+  function report(kind, err, extra) {
+    if (reported >= 8) return
+    reported++
+    const message = clean(err && err.message ? err.message : err)
+    const stack = clean(err && err.stack)
+    const pos = (extra && extra.line) ? extra : userPos(err && err.stack)
+    const payload = { t: 'error', backend: renderer ? backendName() : null, kind, name: (err && err.name) || 'Error', message, line: pos ? pos.line : null, col: pos ? pos.col : null, codeFrame: pos ? codeFrame(pos.line) : '', stack }
+    if (kind !== 'console') { failed = true; stop(); bootEl.textContent = kind + ' error: ' + message; bootEl.style.opacity = '.9' }
+    toHost(payload)
+    if (STANDALONE) console.error('[three-stage]', payload)
+  }
+
+  window.addEventListener('error', (e) => {
+    const fromUser = userUrl && e.filename === userUrl
+    const msg = String((e.error && e.error.message) || e.message || '')
+    const kind = !started && /resolve module specifier|does not provide an export/i.test(msg) ? 'load' : (fromUser && !started ? 'syntax' : 'runtime')
+    report(kind, e.error || e.message, fromUser ? { line: e.lineno, col: e.colno } : null)
+  })
+  window.addEventListener('unhandledrejection', (e) => report(started ? 'runtime' : 'setup', e.reason))
+  const origError = console.error.bind(console)
+  console.error = (...args) => {
+    origError(...args)
+    const text = args.map((a) => (a && a.message) || (typeof a === 'string' ? a : (() => { try { return JSON.stringify(a) } catch { return String(a) } })())).join(' ')
+    if (/THREE\.|shader|WGSL|GLSL/i.test(text)) report('console', { name: 'console.error', message: text })
+  }
+
+  // ---- three.js delivery ----
+  function installImportMap(map) {
+    const s = document.createElement('script')
+    s.type = 'importmap'
+    s.textContent = JSON.stringify({ imports: map })
+    document.head.appendChild(s)
+  }
+  function mapFromSources(rt) {
+    const fixBuild = (code) => code.split("'./three.core.js'").join("'three/core'").split("'./three.tsl.js'").join("'three/tsl'")
+    const map = {}
+    map['three/core'] = blobUrl(rt.build['three.core.js'])
+    map['three/tsl'] = blobUrl(fixBuild(rt.build['three.tsl.js']))
+    map['three/webgpu'] = map['three'] = blobUrl(fixBuild(rt.build['three.webgpu.js']))
+    for (const [rel, src] of Object.entries(rt.addons)) {
+      const dir = rel.split('/').slice(0, -1)
+      const fixed = src.replace(/((?:from|import)\s*['"])(\.{1,2}\/[^'"]+)(['"])/g, (all, a, spec, b) => {
+        const parts = dir.slice()
+        for (const seg of spec.split('/')) { if (seg === '..') parts.pop(); else if (seg !== '.') parts.push(seg) }
+        return a + 'three/addons/' + parts.join('/') + b
+      })
+      map['three/addons/' + rel] = blobUrl(fixed)
+    }
+    return map
+  }
+  function mapFromCdn(base) {
+    return { 'three': base + 'build/three.webgpu.js', 'three/webgpu': base + 'build/three.webgpu.js', 'three/tsl': base + 'build/three.tsl.js', 'three/addons/': base + 'examples/jsm/' }
+  }
+
+  // ---- scene runtime ----
+  let started = false
+  let renderer = null, scene = null, camera = null, controls = null, THREE = null
+  let frameFns = [], customRender = null, cleanup = null, running = false, paused = false
+  let frames = 0, lastFpsAt = 0, clockStart = 0, lastT = 0
+
+  function stop() { running = false; if (renderer) renderer.setAnimationLoop(null) }
+  function play() {
+    if (failed || !renderer || paused) return
+    running = true
+    renderer.setAnimationLoop(tick)
+  }
+  function tick(now) {
+    if (!running) return
+    if (!clockStart) { clockStart = now; lastFpsAt = now }
+    const t = (now - clockStart) / 1000
+    const dt = Math.min(0.1, Math.max(0, t - lastT))
+    lastT = t
+    try {
+      for (const fn of frameFns) fn(dt, t)
+      controls.update()
+      if (customRender) customRender(); else renderer.render(scene, camera)
+    } catch (err) { report('runtime', err); return }
+    if (!started) { started = true; bootEl.remove(); toHost({ t: 'started', backend: backendName() }) }
+    frames++
+    if (now - lastFpsAt > 1000) { toHost({ t: 'fps', fps: Math.round(frames * 1000 / (now - lastFpsAt)) }); frames = 0; lastFpsAt = now }
+  }
+  // Wheel zoom would trap chat scrolling, so it is off until the scene is clicked (always on in
+  // fullscreen and in the exported page). A scene that turns zoom off itself keeps it off.
+  let zoomWanted = true, zoomArmed = false, zoomAlways = !!STANDALONE, hintTimer = 0
+  const hintEl = document.getElementById('hint')
+  function applyZoom() { if (controls) controls.enableZoom = zoomWanted && (zoomArmed || zoomAlways) }
+  function armZoom(on) { zoomArmed = on; applyZoom(); if (on) hintEl.classList.remove('on') }
+  canvas.addEventListener('pointerdown', () => armZoom(true))
+  document.documentElement.addEventListener('pointerleave', () => armZoom(false))
+  addEventListener('blur', () => armZoom(false))
+  canvas.addEventListener('wheel', () => {
+    if (!controls || !zoomWanted || zoomArmed || zoomAlways) return
+    hintEl.classList.add('on')
+    clearTimeout(hintTimer)
+    hintTimer = setTimeout(() => hintEl.classList.remove('on'), 1600)
+  }, { passive: true })
+  canvas.addEventListener('webglcontextlost', () => {
+    if (!failed) report('runtime', { name: 'ContextLost', message: 'The graphics context was lost (too many live scenes, or a GPU reset). Press Restart.' })
+  })
+
+  function backendName() { return renderer && renderer.backend && renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL2' }
+
+  function resize() {
+    if (!renderer) return
+    const w = Math.max(1, innerWidth), h = Math.max(1, innerHeight)
+    renderer.setSize(w, h, false)
+    camera.aspect = w / h
+    camera.updateProjectionMatrix()
+  }
+
+  function autoFrame(defaultPos) {
+    // OrbitControls nudges the camera by float error when it is created, so compare loosely.
+    if (camera.position.distanceTo(defaultPos) > 1e-3 || controls.target.lengthSq() > 1e-6) return
+    const box = new THREE.Box3().setFromObject(scene)
+    if (box.isEmpty() || !isFinite(box.min.x) || !isFinite(box.max.x)) return
+    const size = box.getSize(new THREE.Vector3()).length()
+    if (!(size > 0) || size > 1e6) return
+    const center = box.getCenter(new THREE.Vector3())
+    const dist = size / (2 * Math.tan((camera.fov * Math.PI) / 360)) * 1.1
+    camera.position.copy(center).add(new THREE.Vector3(0.6, 0.45, 0.75).normalize().multiplyScalar(dist))
+    camera.near = Math.max(0.01, dist / 1000); camera.far = dist * 100
+    camera.updateProjectionMatrix()
+    controls.target.copy(center)
+  }
+
+  // ---- model files ----
+  const MODEL_BASE = 'stage://model/'
+  let modelData = null
+
+  function toBytes(b64) {
+    if (Uint8Array.fromBase64) return Uint8Array.fromBase64(b64)
+    const bin = atob(b64), out = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+    return out
+  }
+  const MIME = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' }
+
+  async function loadModel(data) {
+    const bytes = {}, urls = {}
+    for (const [rel, b64] of Object.entries(data.files)) {
+      bytes[rel] = toBytes(b64)
+      urls[rel] = URL.createObjectURL(new Blob([bytes[rel]], { type: MIME[rel.split('.').pop().toLowerCase()] || 'application/octet-stream' }))
+    }
+    const text = (rel) => new TextDecoder().decode(bytes[rel])
+    const manager = new THREE.LoadingManager()
+    manager.setURLModifier((url) => {
+      if (!url.startsWith(MODEL_BASE)) return url
+      let rel = url.slice(MODEL_BASE.length).split('\\').join('/').replace(/^(\.\/)+/, '')
+      try { rel = decodeURI(rel) } catch {}
+      return urls[rel] || url
+    })
+    const main = data.main
+    if (data.kind === 'glb' || data.kind === 'gltf') {
+      const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js')
+      const input = data.kind === 'glb' ? bytes[main].buffer.slice(bytes[main].byteOffset, bytes[main].byteOffset + bytes[main].byteLength) : text(main)
+      const gltf = await new Promise((resolve, reject) => new GLTFLoader(manager).parse(input, MODEL_BASE, resolve, reject))
+      return { object: gltf.scene, animations: gltf.animations || [] }
+    }
+    if (data.kind === 'stl') {
+      const { STLLoader } = await import('three/addons/loaders/STLLoader.js')
+      const b = bytes[main]
+      const geometry = new STLLoader(manager).parse(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength))
+      if (!geometry.hasAttribute('normal')) geometry.computeVertexNormals()
+      const material = new THREE.MeshStandardMaterial({ color: geometry.hasColors ? 0xffffff : 0xb8bcc4, vertexColors: !!geometry.hasColors, metalness: 0.1, roughness: 0.55 })
+      const mesh = new THREE.Mesh(geometry, material)
+      mesh.rotation.x = -Math.PI / 2 // STL is Z-up by convention
+      const group = new THREE.Group()
+      group.add(mesh)
+      return { object: group, animations: [] }
+    }
+    const { OBJLoader } = await import('three/addons/loaders/OBJLoader.js')
+    const loader = new OBJLoader(manager)
+    const mtl = Object.keys(bytes).find((rel) => rel.toLowerCase().endsWith('.mtl'))
+    if (mtl) {
+      const { MTLLoader } = await import('three/addons/loaders/MTLLoader.js')
+      const materials = new MTLLoader(manager).parse(text(mtl), MODEL_BASE)
+      materials.preload()
+      loader.setMaterials(materials)
+    }
+    const object = loader.parse(text(main))
+    // OBJ/MTL materials are Phong, which ignores scene.environment and would render black here.
+    const toStandard = (m) => new THREE.MeshStandardMaterial({ name: m.name, color: m.color, map: m.map, normalMap: m.normalMap, opacity: m.opacity, transparent: m.transparent, side: m.side, metalness: 0, roughness: 0.65 })
+    object.traverse((o) => { if (o.isMesh) o.material = Array.isArray(o.material) ? o.material.map(toStandard) : toStandard(o.material) })
+    return { object, animations: [] }
+  }
+
+  function modelStats(object, animations, data) {
+    let meshes = 0, triangles = 0
+    object.traverse((o) => {
+      if (!o.isMesh || !o.geometry) return
+      const g = o.geometry, count = g.index ? g.index.count : (g.attributes.position ? g.attributes.position.count : 0)
+      meshes++
+      triangles += Math.floor(count / 3) * (o.isInstancedMesh ? o.count : 1)
+    })
+    return { kind: data.kind, bytes: data.bytes, meshes, triangles, animations: animations.length }
+  }
+
+  window.__threeStageRun = async (mod) => {
+    try {
+      const setup = mod && mod.default
+      if (typeof setup !== 'function') throw new TypeError('Scene code must `export default function (stage) { ... }`.')
+      THREE = await import('three')
+      const TSL = await import('three/tsl')
+      const { OrbitControls } = await import('three/addons/controls/OrbitControls.js')
+      renderer = new THREE.WebGPURenderer({ canvas, antialias: true, alpha: true })
+      await renderer.init()
+      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2))
+      renderer.setClearColor(0x000000, 0)
+      scene = new THREE.Scene()
+      camera = new THREE.PerspectiveCamera(50, 1, 0.1, 2000)
+      const defaultPos = new THREE.Vector3(4, 3, 6)
+      camera.position.copy(defaultPos)
+      controls = new OrbitControls(camera, canvas)
+      controls.enableDamping = true
+      resize()
+      const stage = {
+        THREE, TSL, scene, camera, renderer, controls, canvas,
+        backend: backendName(),
+        onFrame: (fn) => { if (typeof fn === 'function') frameFns.push(fn) },
+        setRender: (fn) => { customRender = typeof fn === 'function' ? fn : null },
+        get width() { return innerWidth }, get height() { return innerHeight }
+      }
+      if (modelData) {
+        bootEl.textContent = 'loading model…'
+        const { RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js')
+        scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture
+        // Environment light alone flattens plain models (an untextured STL reads as a white blob), so
+        // add a key light for shape and tone-map so highlights do not clip.
+        scene.environmentIntensity = 0.7
+        const key = new THREE.DirectionalLight(0xffffff, 1.8)
+        key.position.set(3, 5, 4)
+        scene.add(key)
+        renderer.toneMapping = THREE.NeutralToneMapping
+        let loaded
+        try {
+          loaded = await Promise.race([
+            loadModel(modelData),
+            new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error('the model did not load within 60 s'), { name: 'TimeoutError' })), 60000))
+          ])
+        } catch (err) { return report('model', err) }
+        scene.add(loaded.object)
+        stage.model = loaded.object
+        stage.animations = loaded.animations
+        if (loaded.animations.length) {
+          stage.mixer = new THREE.AnimationMixer(loaded.object)
+          stage.mixer.clipAction(loaded.animations[0]).play()
+          stage.onFrame((dt) => stage.mixer.update(dt))
+        }
+        toHost({ t: 'model', stats: modelStats(loaded.object, loaded.animations, modelData) })
+      }
+      const result = await Promise.race([
+        Promise.resolve(setup(stage)),
+        new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error('setup() did not finish within 20 s'), { name: 'TimeoutError' })), 20000))
+      ])
+      if (typeof result === 'function') cleanup = result
+      autoFrame(defaultPos)
+      zoomWanted = controls.enableZoom !== false
+      applyZoom()
+      clockStart = 0; lastT = 0
+      if (verifying) await verifyRun()
+      else play()
+    } catch (err) { report(started ? 'runtime' : 'setup', err) }
+  }
+
+  // ---- verify mode: a hidden dry run for three_scene, driven by timers because a hidden frame
+  // gets no animation frames. Simulates one second of the scene, then checks what it drew.
+  let verifying = false
+
+  function readPixels() {
+    const c = document.createElement('canvas')
+    c.width = 48; c.height = 27
+    const g = c.getContext('2d', { willReadFrequently: true })
+    g.drawImage(canvas, 0, 0, c.width, c.height)
+    const d = g.getImageData(0, 0, c.width, c.height).data
+    let covered = 0, sum = 0, lo = 255, hi = 0
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] < 10) continue
+      const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]
+      covered++; sum += l
+      if (l < lo) lo = l
+      if (l > hi) hi = l
+    }
+    const total = d.length / 4
+    return { covered: +(covered / total).toFixed(3), meanLuma: covered ? Math.round(sum / covered) : 0, lumaRange: covered ? Math.round(hi - lo) : 0 }
+  }
+
+  // A MessageChannel turn, because timers are throttled to about 1 Hz in a background window.
+  function nextTurn() {
+    return new Promise((resolve) => {
+      const { port1, port2 } = new MessageChannel()
+      port1.onmessage = () => { port1.close(); resolve() }
+      port2.postMessage(0)
+    })
+  }
+
+  async function verifyRun() {
+    const FRAMES = 30, dt = 1 / 30
+    let t = 0, pixels = null
+    bootEl.style.display = 'none'
+    for (let i = 0; i < FRAMES && !failed; i++) {
+      t += dt
+      try {
+        for (const fn of frameFns) fn(dt, t)
+        controls.update()
+        if (customRender) customRender(); else renderer.render(scene, camera)
+        if (i === FRAMES - 1) pixels = readPixels()
+      } catch (err) { return report('runtime', err) }
+      await nextTurn()
+    }
+    // Shader and pipeline errors surface asynchronously.
+    await new Promise((r) => setTimeout(r, 400))
+    if (failed) return
+    const info = (renderer.info && renderer.info.render) || {}
+    const perFrame = (total) => (typeof total === 'number' ? Math.round(total / FRAMES) : null) // the counters accumulate
+    toHost({ t: 'verified', backend: backendName(), frames: FRAMES, drawCalls: perFrame(info.drawCalls ?? info.calls), triangles: perFrame(info.triangles), pixels })
+  }
+
+  function startScene(code) {
+    userLines = String(code).split('\n')
+    userUrl = blobUrl(code)
+    const boot = document.createElement('script')
+    boot.type = 'module'
+    boot.src = blobUrl(`import * as m from ${JSON.stringify(userUrl)}; window.__threeStageRun(m)`)
+    boot.onerror = () => report('load', new Error('The scene module failed to load. Check its import specifiers.'))
+    document.head.appendChild(boot)
+  }
+
+  addEventListener('resize', resize)
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') toHost({ t: 'escape' }) })
+
+  function shot() {
+    if (!renderer) return toHost({ t: 'shot', error: 'scene not running' })
+    try {
+      if (customRender) customRender(); else renderer.render(scene, camera)
+      // The canvas is transparent where the scene has no background; save what the card shows.
+      const out = document.createElement('canvas')
+      out.width = canvas.width; out.height = canvas.height
+      const g = out.getContext('2d')
+      g.fillStyle = getComputedStyle(document.body).backgroundColor || '#15161a'
+      g.fillRect(0, 0, out.width, out.height)
+      g.drawImage(canvas, 0, 0)
+      toHost({ t: 'shot', dataUrl: out.toDataURL('image/png') })
+    } catch (err) { toHost({ t: 'shot', error: String(err && err.message || err) }) }
+  }
+
+  if (STANDALONE) {
+    document.body.classList.add('standalone')
+    installImportMap(mapFromCdn(STANDALONE.cdn))
+    modelData = STANDALONE.model || null
+    document.title = STANDALONE.title || 'three-stage scene'
+    startScene(STANDALONE.code)
+    return
+  }
+
+  addEventListener('message', (e) => {
+    if (e.source !== parent || !e.data || typeof e.data !== 'object') return
+    const m = e.data
+    if (m.t === 'boot' && !userUrl) {
+      try { installImportMap(mapFromSources(m.runtime)) } catch (err) { return report('load', err) }
+      // A frame whose color-scheme differs from the page gets an opaque white backdrop, so take
+      // the card's real colours instead of relying on transparency.
+      if (m.theme && m.theme.background) {
+        document.documentElement.style.background = m.theme.background
+        document.body.style.background = m.theme.background
+      }
+      if (m.theme && m.theme.colorScheme) document.documentElement.style.colorScheme = m.theme.colorScheme
+      modelData = m.model || null
+      verifying = !!m.verify
+      paused = !!m.paused
+      zoomAlways = !!m.zoom
+      startScene(String(m.code || ''))
+    } else if (m.t === 'pause') {
+      paused = !!m.paused
+      if (paused) stop(); else if (started || renderer) play()
+    } else if (m.t === 'zoom') {
+      zoomAlways = !!m.always
+      applyZoom()
+    } else if (m.t === 'shot') shot()
+  })
+  toHost({ t: 'ready' })
+})()
+</script></body></html>

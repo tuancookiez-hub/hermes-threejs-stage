@@ -1,0 +1,13 @@
+{
+  "name": "three-stage",
+  "label": "three-stage",
+  "description": "Backend for the three-stage Desktop scene card: serves the bundled three.js r187 sources, scene records and stored models, and saves card screenshots.",
+  "icon": "Box",
+  "version": "0.1.0",
+  "tab": {
+    "path": "/three-stage",
+    "hidden": true
+  },
+  "entry": "dist/index.js",
+  "api": "plugin_api.py"
+}
