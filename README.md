@@ -1,4 +1,4 @@
-# three-stage
+# Three.js Stage
 
 Live three.js r187 scenes and 3D models in Hermes chat.
 
@@ -40,15 +40,15 @@ model can't see what its own code does on a real GPU.
 | Part | What it does |
 |---|---|
 | `three_scene` tool | Statically checks the scene against the r187 contract (imports, renderer misuse, GLSL, storage, loop ownership) and validates model files. It rejects problems in the same turn, stores the scene, and returns a `MEDIA:` line. |
-| `three-stage:three-r187` skill | The scene contract, the WebGL2-vs-WebGPU rules, bundled addons, and recipes (environment lighting, shadows, instancing, bloom, TSL materials). |
+| `threejs-stage:three-r187` skill | The scene contract, the WebGL2-vs-WebGPU rules, bundled addons, and recipes (environment lighting, shadows, instancing, bloom, TSL materials). |
 | Desktop card | A tool media renderer for `three_scene`. It runs the scene in a `SandboxedFrame` whose content security policy blocks network access, and pauses rendering when scrolled out of view. |
 | Backend (`dashboard/plugin_api.py`) | Serves the vendored three.js r187 to the card, serves scene records and stored models (by scene id, never by path), and saves screenshots. |
 
 ## Requirements and install
 
 - Hermes `>= 0.22.7`. The card needs a Desktop build with tool media renderers.
-- `hermes plugins install three-stage`, then enable it for the profile
-  (`hermes plugins enable three-stage`) and turn on its Desktop half in **Capabilities → Plugins**.
+- `hermes plugins install threejs-stage`, then enable it for the profile
+  (`hermes plugins enable threejs-stage`) and turn on its Desktop half in **Capabilities → Plugins**.
 - Restart the gateway once after installing, so the plugin's backend routes are mounted.
 
 ## Disclosures
@@ -64,9 +64,9 @@ model can't see what its own code does on a real GPU.
   and has no such policy.
 - **Files read and written.** When Hermes passes a model path, the tool reads that file and the
   `.bin`, `.mtl` and image files it references. References that leave the model's folder are
-  refused. It copies them to `<HERMES_HOME>/plugin-data/three-stage/models/`. Scene records go to
-  `.../plugin-data/three-stage/scenes/`, screenshots to `.../plugin-data/three-stage/screenshots/`,
-  and delivered files to `<HERMES_HOME>/cache/generated/three-stage/`. Nothing is deleted
+  refused. It copies them to `<HERMES_HOME>/plugin-data/threejs-stage/models/`. Scene records go to
+  `.../plugin-data/threejs-stage/scenes/`, screenshots to `.../plugin-data/threejs-stage/screenshots/`,
+  and delivered files to `<HERMES_HOME>/cache/generated/threejs-stage/`. Nothing is deleted
   automatically; these folders are safe to clear, at the cost of old cards no longer reopening.
 - **Hidden dry runs.** With Desktop open, each `three_scene` call runs the scene briefly in a
   hidden sandboxed frame. The tool waits up to 2.5 seconds for Desktop to pick it up, and up to

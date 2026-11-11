@@ -19,7 +19,7 @@ import time
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote
 
-PLUGIN = "three-stage"
+PLUGIN = "threejs-stage"
 TOOL = "three_scene"
 MAX_CODE_BYTES = 200_000
 MAX_TITLE = 80
@@ -63,7 +63,7 @@ SCHEMA = {
         "file). Use it whenever a 3D visual, simulation, model or diagram would help. To show a "
         "model file, pass `model` (no code needed). To customise it, also pass `code`: the loaded "
         "model is stage.model. Before writing code the first time in a "
-        "session, load the skill `three-stage:three-r187` for the full contract. Contract: `code` is "
+        "session, load the skill `threejs-stage:three-r187` for the full contract. Contract: `code` is "
         "an ES module that does `export default function (stage) {...}`; `stage` gives THREE "
         "(three/webgpu), TSL, scene, camera, renderer (an initialised WebGPURenderer, which may run "
         "on its WebGL2 backend), controls (OrbitControls), canvas, backend ('WebGPU'|'WebGL2') and "
@@ -178,7 +178,7 @@ def _glb_json(path: Path) -> dict:
 def _gltf_refs(doc: dict) -> list[str]:
     blocked = sorted({UNSUPPORTED_EXTENSIONS[e] for e in doc.get("extensionsRequired", []) if e in UNSUPPORTED_EXTENSIONS})
     if blocked:
-        raise ModelError(f"This model needs {', '.join(blocked)}, which three-stage does not support. "
+        raise ModelError(f"This model needs {', '.join(blocked)}, which threejs-stage does not support. "
                          "Export it again without compression.")
     refs = []
     for entry in (doc.get("buffers") or []) + (doc.get("images") or []):

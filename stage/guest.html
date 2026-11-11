@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><!--CSP--><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>three-stage</title>
+<title>threejs-stage</title>
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#15161a;color:#ccc;font:12px/1.4 system-ui,sans-serif}
 body.standalone{background:#15161a}
@@ -11,7 +11,7 @@ canvas{display:block;width:100%;height:100%;touch-action:none;outline:none}
 </style></head>
 <body><canvas id="stage" tabindex="0"></canvas><div id="boot">loading scene…</div><div id="hint">Click the scene, then scroll to zoom</div>
 <script>
-// three-stage harness. Runs scene code written for three.js r187 inside a sandboxed frame.
+// threejs-stage harness. Runs scene code written for three.js r187 inside a sandboxed frame.
 // Desktop mode: the host card posts {t:'boot'} with three.js sources + scene code (no network).
 // Standalone mode (exported HTML): window.__THREE_STAGE__ carries the scene and a CDN base.
 (() => {
@@ -51,7 +51,7 @@ canvas{display:block;width:100%;height:100%;touch-action:none;outline:none}
     const payload = { t: 'error', backend: renderer ? backendName() : null, kind, name: (err && err.name) || 'Error', message, line: pos ? pos.line : null, col: pos ? pos.col : null, codeFrame: pos ? codeFrame(pos.line) : '', stack }
     if (kind !== 'console') { failed = true; stop(); bootEl.textContent = kind + ' error: ' + message; bootEl.style.opacity = '.9' }
     toHost(payload)
-    if (STANDALONE) console.error('[three-stage]', payload)
+    if (STANDALONE) console.error('[threejs-stage]', payload)
   }
 
   window.addEventListener('error', (e) => {
@@ -391,7 +391,7 @@ canvas{display:block;width:100%;height:100%;touch-action:none;outline:none}
     document.body.classList.add('standalone')
     installImportMap(mapFromCdn(STANDALONE.cdn))
     modelData = STANDALONE.model || null
-    document.title = STANDALONE.title || 'three-stage scene'
+    document.title = STANDALONE.title || 'threejs-stage scene'
     startScene(STANDALONE.code)
     return
   }

@@ -1,4 +1,4 @@
-"""three-stage: live three.js r187 scenes in Hermes chat.
+"""threejs-stage: live three.js r187 scenes in Hermes chat.
 
 Registers one tool (``three_scene``) and one skill (``three-r187``) through the public plugin API.
 The Desktop half (``desktop/plugin.js``) draws the tool's ``MEDIA:`` file as a live scene card.
@@ -10,7 +10,7 @@ from pathlib import Path
 
 from . import scene as _scene
 
-TOOLSET = "three_stage"
+TOOLSET = "threejs_stage"
 SKILL = "three-r187"
 SKILL_DESCRIPTION = "Write correct three.js r187 scenes for three_scene."
 

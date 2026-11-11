@@ -1,5 +1,5 @@
-name: three-stage
-label: three-stage
+name: threejs-stage
+label: Three.js Stage
 kind: standalone
 version: 0.1.0
 manifest_version: 2
@@ -16,7 +16,7 @@ description: >
   origin, scripts only, no app or storage access) whose content security policy blocks all
   network requests;
   the exported HTML file loads three.js from cdn.jsdelivr.net when opened outside Desktop. Scenes
-  are stored under plugin-data/three-stage and cache/generated/three-stage. When given a model path,
+  are stored under plugin-data/threejs-stage and cache/generated/threejs-stage. When given a model path,
   the tool reads that file and the .bin, .mtl and image files it references in the same folder, and
   copies them to plugin-data (50 MB limit). No API keys, no
   background processes, no telemetry, no paid services. Each "Fix with Hermes" or "Ask Hermes"

@@ -1,6 +1,6 @@
-"""three-stage backend: what the Desktop scene card needs from the machine Hermes runs on.
+"""threejs-stage backend: what the Desktop scene card needs from the machine Hermes runs on.
 
-Mounted at ``/api/plugins/three-stage/`` once the plugin is in ``plugins.enabled``. The Desktop card
+Mounted at ``/api/plugins/threejs-stage/`` once the plugin is in ``plugins.enabled``. The Desktop card
 never reads files itself (Desktop may be connected to a remote Hermes), so it asks here.
 
 Routes:
@@ -38,7 +38,7 @@ _runtime_cache: dict | None = None
 
 def _load_scene_module():
     """``scene.py`` beside this folder; the plugin host imports this file standalone (no package)."""
-    spec = importlib.util.spec_from_file_location("hermes_three_stage_scene", _ROOT / "scene.py")
+    spec = importlib.util.spec_from_file_location("hermes_threejs_stage_scene", _ROOT / "scene.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

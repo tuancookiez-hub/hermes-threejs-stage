@@ -1,4 +1,4 @@
-// three-stage — Desktop half. Draws three_scene results as a live, sandboxed scene card.
+// threejs-stage — Desktop half. Draws three_scene results as a live, sandboxed scene card.
 // Source of desktop/plugin.js: `node scripts/build.mjs` inlines stage/guest.html as GUEST_URL.
 import * as sdk from '@hermes/plugin-sdk'
 import { Button, Codicon, Input, SandboxedFrame, atom, host, useValue } from '@hermes/plugin-sdk'
@@ -78,7 +78,7 @@ async function watchForVerify() {
         // Claim a job only when the hidden host is mounted to run it.
         next = verifyHostMounted ? await CTX.rest('/verify/next', { method: 'POST', body: {} }) : null
       } catch (err) { // the tool times out and reports the scene as unverified
-        console.warn('[three-stage] dry run unavailable:', (err && err.message) || err)
+        console.warn('[threejs-stage] dry run unavailable:', (err && err.message) || err)
         return
       }
       if (next && next.id) {
@@ -443,8 +443,8 @@ function SceneCard({ args, result, sessionId, fallback }) {
     body = jsx('div', {
       className: 'flex h-full flex-col items-center justify-center gap-2 p-4 text-center text-sm text-(--ui-text-secondary)',
       children: [
-        jsx('div', { children: hasModel ? 'This model could not be loaded.' : 'The three-stage backend is not reachable, so the scene cannot run here.' }, 'a'),
-        jsx('div', { className: 'text-xs text-(--ui-text-tertiary)', children: 'Enable the three-stage plugin for this profile (Capabilities → Plugins) and restart the gateway. ' + clip(loadError, 200) }, 'b')
+        jsx('div', { children: hasModel ? 'This model could not be loaded.' : 'The threejs-stage backend is not reachable, so the scene cannot run here.' }, 'a'),
+        jsx('div', { className: 'text-xs text-(--ui-text-tertiary)', children: 'Enable the threejs-stage plugin for this profile (Capabilities → Plugins) and restart the gateway. ' + clip(loadError, 200) }, 'b')
       ]
     })
   } else if (asleep) {
@@ -523,8 +523,8 @@ function SceneCard({ args, result, sessionId, fallback }) {
 }
 
 export default {
-  id: 'three-stage',
-  name: 'three-stage',
+  id: 'threejs-stage',
+  name: 'Three.js Stage',
   register(ctx) {
     CTX = ctx
     runtimePromise = null
